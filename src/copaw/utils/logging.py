@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """Logging setup for CoPaw: console output and optional file handler."""
-import io
+
 import logging
 import logging.handlers
 import os
@@ -23,27 +23,6 @@ _LEVEL_MAP = {
 
 # Top-level name for this package; only loggers under this name are shown.
 LOG_NAMESPACE = "copaw"
-
-
-def _enable_windows_ansi() -> None:
-    """Enable ANSI escape code support on Windows 10+."""
-    if platform.system() != "Windows":
-        return
-    try:
-        import ctypes
-
-        kernel32 = ctypes.windll.kernel32  # type: ignore[attr-defined]
-        # STD_OUTPUT_HANDLE = -11, ENABLE_VIRTUAL_TERMINAL_PROCESSING = 0x0004
-        handle = kernel32.GetStdHandle(-11)
-        mode = ctypes.c_ulong()  # pylint: disable=no-value-for-parameter
-        kernel32.GetConsoleMode(handle, ctypes.byref(mode))
-        kernel32.SetConsoleMode(handle, mode.value | 0x0004)
-    except Exception:
-        pass
-
-
-# Call once at import time
-_enable_windows_ansi()
 
 
 class ColorFormatter(logging.Formatter):
@@ -103,38 +82,23 @@ class SuppressPathAccessLogFilter(logging.Filter):
 
 def setup_logger(level: int | str = logging.INFO):
     """Configure logging to only output from this package (copaw), not deps."""
-    log_format = "%(asctime)s | %(message)s"
-    datefmt = "%Y-%m-%d %H:%M:%S"
+    from logre.handler import default_handler
+    import loguru
+
+    loguru.logger.remove()
+    loguru.logger.add(default_handler, format="%(message)s",colorize=True, level="INFO")
 
     if isinstance(level, str):
         level = _LEVEL_MAP.get(level.lower(), logging.INFO)
 
-    formatter = ColorFormatter(log_format, datefmt)
+    for name in [None, "uvicorn"]:
+        logging.getLogger(name).handlers = [default_handler]
 
-    # Suppress third-party: set root logger level and configure handlers.
-    root = logging.getLogger()
-    for handler in root.handlers:
-        if isinstance(
-            handler,
-            (logging.FileHandler, logging.handlers.RotatingFileHandler),
-        ):
-            handler.setLevel(logging.INFO)
-        else:
-            handler.setLevel(logging.WARNING)
+    from logre import logger
 
     # Only attach handler to our namespace so only copaw.* logs are printed.
-    logger = logging.getLogger(LOG_NAMESPACE)
     logger.setLevel(level)
     logger.propagate = False
-    if not logger.handlers:
-        utf8_stderr = io.TextIOWrapper(
-            sys.stderr.buffer,
-            encoding="utf-8",
-            errors="replace",
-        )
-        handler = logging.StreamHandler(utf8_stderr)
-        handler.setFormatter(formatter)
-        logger.addHandler(handler)
 
     return logger
 
@@ -156,7 +120,7 @@ def add_copaw_file_handler(log_path: Path) -> None:
     log_path.parent.mkdir(parents=True, exist_ok=True)
     logger = logging.getLogger(LOG_NAMESPACE)
     for handler in logger.handlers:
-        base = getattr(handler, "baseFilename", None)
+        base: str | None = getattr(handler, "baseFilename", None)
         if base is not None and Path(base).resolve() == log_path:
             return
 
