@@ -89,18 +89,14 @@ def has_tg_token(content: str) -> bool:
 
 
 def log_filter(record: logging.LogRecord) -> bool:
-    from logre.funcs import path2pkg
-
-    if (pkg := path2pkg(record.filename)) is not None:
-        if pkg == "httpx._client":
-            if isinstance(record.args, tuple):
-                args = list(record.args)
-            else:
-                # noinspection PyTypeChecker
-                args = list(dict(record.args).values())
-            for i in args + [record.msg]:
-                if has_tg_token(str(i)):
-                    return False
+    if isinstance(record.args, tuple):
+        args = list(record.args)
+    else:
+        # noinspection PyTypeChecker
+        args = list(dict(record.args).values())
+    for i in args + [record.msg]:
+        if has_tg_token(str(i)):
+            return False
 
     return True
 
