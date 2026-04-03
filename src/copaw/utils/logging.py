@@ -7,7 +7,15 @@ import os
 import platform
 import sys
 from functools import lru_cache
+from logging import LogRecord
 from pathlib import Path
+from typing import Mapping
+
+from logre.filter import BaseFilter, filter_method
+from logre.funcs import resolve_path
+
+# noinspection PyPackageRequirements
+from loguru import Record
 
 # Rotating file handler limits (idempotent add avoids duplicate handlers)
 _COPAW_LOG_MAX_BYTES = 5 * 1024 * 1024  # 5 MiB
@@ -88,17 +96,45 @@ def has_tg_token(content: str) -> bool:
     return bool(re.compile(r".*?([0-9]{8,10}):([a-zA-Z0-9_-]{35}).*?").match(content))
 
 
-def log_filter(record: logging.LogRecord) -> bool:
-    if isinstance(record.args, tuple):
-        args = list(record.args)
+def filter_for_tg_token(record: LogRecord | Record) -> bool:
+    if isinstance(record, LogRecord):
+        filepath = record.pathname
+        msg = record.msg
+        args = record.args
     else:
-        # noinspection PyTypeChecker
-        args = list(dict(record.args).values())
-    for i in args + [record.msg]:
-        if has_tg_token(str(i)):
+        filepath = record["file"].path
+        msg = record["message"]
+        args = ()
+    if resolve_path(filepath) not in ["http._client"]:
+        return True
+    record_args = [msg]
+    if isinstance(args, tuple):
+        record_args.extend(args)
+    elif isinstance(args, Mapping):
+        record_args.extend(dict(args).values())
+    for arg in record_args:
+        if has_tg_token(str(arg)):
             return False
-
     return True
+
+
+class Filter(BaseFilter):
+    _FILTERED_MODULE = [
+        "httpcore._trace",
+        "tzlocal.unix",
+        "tzlocal.win32",
+    ]
+
+    @filter_method
+    def filter_telegram(self, record: LogRecord) -> bool:
+        module = resolve_path(record.pathname)
+        if module in ["telegram.ext._application"]:
+            return record.funcName != "__update_fetcher"
+        return True
+
+    @filter_method
+    def filter_telegram_bot_token(self, record: LogRecord) -> bool:
+        return filter_for_tg_token(record)
 
 
 # noinspection PyPackageRequirements
@@ -107,12 +143,19 @@ def setup_logger(level: int | str = logging.INFO):
     import loguru
     from logre.handler import default_handler
 
-    default_handler.addFilter(log_filter)
+    log_filter = Filter()
+    default_handler.filters = [log_filter]
 
     loguru.logger.remove()
     loguru.logger.add(
-        default_handler, format="%(message)s", colorize=True, level="INFO"
+        default_handler,
+        level="INFO",
+        format="{message}",
+        filter=filter_for_tg_token,
+        colorize=True,
     )
+
+    loguru.logger.info("Test")
 
     if isinstance(level, str):
         level = _LEVEL_MAP.get(level.lower(), logging.INFO)
