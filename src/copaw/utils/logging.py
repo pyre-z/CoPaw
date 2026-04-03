@@ -104,8 +104,10 @@ def log_filter(record: logging.LogRecord) -> bool:
 # noinspection PyPackageRequirements
 def setup_logger(level: int | str = logging.INFO):
     """Configure logging to only output from this package (copaw), not deps."""
-    from logre.handler import default_handler
     import loguru
+    from logre.handler import default_handler
+
+    default_handler.addFilter(log_filter)
 
     loguru.logger.remove()
     loguru.logger.add(
@@ -123,7 +125,6 @@ def setup_logger(level: int | str = logging.INFO):
     # Only attach handler to our namespace so only copaw.* logs are printed.
     logger.setLevel(level)
     logger.propagate = False
-    logger.addFilter(log_filter)
 
     return logger
 
