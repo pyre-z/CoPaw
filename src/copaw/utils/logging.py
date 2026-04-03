@@ -14,9 +14,6 @@ from typing import Mapping
 from logre.filter import BaseFilter, filter_method
 from logre.funcs import resolve_path
 
-# noinspection PyPackageRequirements
-from loguru import Record
-
 # Rotating file handler limits (idempotent add avoids duplicate handlers)
 _COPAW_LOG_MAX_BYTES = 5 * 1024 * 1024  # 5 MiB
 _COPAW_LOG_BACKUP_COUNT = 3
@@ -96,7 +93,7 @@ def has_tg_token(content: str) -> bool:
     return bool(re.compile(r".*?([0-9]{8,10}):([a-zA-Z0-9_-]{35}).*?").match(content))
 
 
-def filter_for_tg_token(record: LogRecord | Record) -> bool:
+def filter_for_tg_token(record: LogRecord | dict) -> bool:
     if isinstance(record, LogRecord):
         filepath = record.pathname
         msg = record.msg
@@ -105,7 +102,7 @@ def filter_for_tg_token(record: LogRecord | Record) -> bool:
         filepath = record["file"].path
         msg = record["message"]
         args = ()
-    if resolve_path(filepath) not in ["http._client"]:
+    if resolve_path(filepath) not in ["httpx._client"]:
         return True
     record_args = [msg]
     if isinstance(args, tuple):
@@ -147,6 +144,7 @@ def setup_logger(level: int | str = logging.INFO):
     default_handler.filters = [log_filter]
 
     loguru.logger.remove()
+    # noinspection PyTypeChecker
     loguru.logger.add(
         default_handler,
         level="INFO",
@@ -154,8 +152,6 @@ def setup_logger(level: int | str = logging.INFO):
         filter=filter_for_tg_token,
         colorize=True,
     )
-
-    loguru.logger.info("Test")
 
     if isinstance(level, str):
         level = _LEVEL_MAP.get(level.lower(), logging.INFO)
