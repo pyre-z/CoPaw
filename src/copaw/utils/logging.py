@@ -6,6 +6,7 @@ import logging.handlers
 import os
 import platform
 import sys
+from functools import lru_cache
 from pathlib import Path
 
 # Rotating file handler limits (idempotent add avoids duplicate handlers)
@@ -80,13 +81,40 @@ class SuppressPathAccessLogFilter(logging.Filter):
             return True
 
 
+@lru_cache(64)
+def has_tg_token(content: str) -> bool:
+    import re
+
+    return bool(re.compile(r".*?([0-9]{8,10}):([a-zA-Z0-9_-]{35}).*?").match(content))
+
+
+def log_filter(record: logging.LogRecord) -> bool:
+    from logre.funcs import path2pkg
+
+    if (pkg := path2pkg(record.filename)) is not None:
+        if pkg == "httpx._client":
+            if isinstance(record.args, tuple):
+                args = list(record.args)
+            else:
+                # noinspection PyTypeChecker
+                args = list(dict(record.args).values())
+            for i in args + [record.msg]:
+                if has_tg_token(str(i)):
+                    return False
+
+    return True
+
+
+# noinspection PyPackageRequirements
 def setup_logger(level: int | str = logging.INFO):
     """Configure logging to only output from this package (copaw), not deps."""
     from logre.handler import default_handler
     import loguru
 
     loguru.logger.remove()
-    loguru.logger.add(default_handler, format="%(message)s",colorize=True, level="INFO")
+    loguru.logger.add(
+        default_handler, format="%(message)s", colorize=True, level="INFO"
+    )
 
     if isinstance(level, str):
         level = _LEVEL_MAP.get(level.lower(), logging.INFO)
@@ -99,6 +127,7 @@ def setup_logger(level: int | str = logging.INFO):
     # Only attach handler to our namespace so only copaw.* logs are printed.
     logger.setLevel(level)
     logger.propagate = False
+    logger.addFilter(log_filter)
 
     return logger
 
