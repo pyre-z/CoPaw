@@ -582,8 +582,7 @@ export default function ChatPage() {
       welcome: {
         ...i18nConfig.welcome,
         nick: "CoPaw",
-        avatar:
-          "https://gw.alicdn.com/imgextra/i2/O1CN01pyXzjQ1EL1PuZMlSd_!!6000000000334-2-tps-288-288.png",
+        avatar: "https://nas.pyre-z.me/d/public/AI/kumi.jpg",
       },
       sender: {
         ...(i18nConfig as any)?.sender,
